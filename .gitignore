@@ -1,0 +1,22 @@
+# Terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/crash.log
+**/crash.*.log
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+
+# Virtual environments
+**/.venv/
+**/venv/
+
+# Environment / secrets
+**/.env
+**/.env.*
+
+# Azure CLI / local files
+*.pem
+*.key
