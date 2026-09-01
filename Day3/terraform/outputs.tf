@@ -1,15 +1,15 @@
 output "sql_server_name" {
-  value = azurerm_mssql_server.main.name
+  value = module.sql_server.server_name
 }
 
 output "sql_database_name" {
-  value = azurerm_mssql_database.main.name
+  value = module.sql_database.database_name
 }
 
 output "app_name" {
-  value = azurerm_linux_web_app.main.name
+  value = module.app_service.app_name
 }
 
 output "app_principal_id" {
-  value = azurerm_linux_web_app.main.identity[0].principal_id
+  value = module.app_service.app_principal_id
 }
