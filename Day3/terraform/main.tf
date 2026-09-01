@@ -19,6 +19,12 @@ resource "azurerm_mssql_server" "main" {
     tenant_id                   = data.azurerm_client_config.current.tenant_id
     azuread_authentication_only = true
   }
+
+  lifecycle {
+    ignore_changes = [
+      azuread_administrator
+    ]
+  }
 }
 
 resource "azurerm_mssql_database" "main" {
@@ -46,6 +52,8 @@ resource "azurerm_linux_web_app" "main" {
   }
 
   site_config {
+    app_command_line = "gunicorn --bind=0.0.0.0:8000 app:app"
+
     application_stack {
       python_version = "3.11"
     }
