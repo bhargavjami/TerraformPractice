@@ -15,8 +15,8 @@ module "vnet" {
 module "subnet" {
   source = "./modules/networking/subnet"
 
-  resource_group_name  = azurerm_resource_group.main.name
-  vnet_name            = module.vnet.vnet_name
+  resource_group_name = azurerm_resource_group.main.name
+  vnet_name           = module.vnet.vnet_name
 }
 
 module "key_vault" {
@@ -32,10 +32,10 @@ module "key_vault" {
 module "sql_server" {
   source = "./modules/sql/server"
 
-  resource_group_name  = azurerm_resource_group.main.name
-  location             = azurerm_resource_group.main.location
-  object_id            = data.azurerm_client_config.current.object_id
-  tenant_id            = data.azurerm_client_config.current.tenant_id
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  object_id           = data.azurerm_client_config.current.object_id
+  tenant_id           = data.azurerm_client_config.current.tenant_id
 }
 
 module "sql_database" {
