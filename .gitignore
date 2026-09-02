@@ -20,3 +20,5 @@
 # Azure CLI / local files
 *.pem
 *.key
+
+**/*.tfvars
