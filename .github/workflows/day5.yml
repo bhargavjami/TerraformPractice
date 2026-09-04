@@ -81,7 +81,7 @@ jobs:
 
       - name: Set version for manual tag deployment
         if: github.event_name == 'workflow_dispatch'
-        id: version
+        id: manual-version
         run: |
           TAG="${{ inputs.tag }}"
           VERSION="${TAG#dev-}"
