@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.set-version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -38,11 +38,16 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
-      # Automatic run from main:
-      # Read current version from Vault and bump the patch number.
-      - name: Get and bump version from Vault
+      - name: Install Vault CLI
+        run: |
+          wget -q https://releases.hashicorp.com/vault/2.0.4/vault_2.0.4_linux_amd64.zip
+          unzip -o vault_2.0.4_linux_amd64.zip
+          sudo mv vault /usr/local/bin/vault
+          vault version
+
+      - name: Get current version from Vault
         if: github.event_name == 'push'
-        id: version
+        id: vault
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ env.VAULT_ADDR }}
@@ -57,9 +62,9 @@ jobs:
 
       - name: Calculate next version
         if: github.event_name == 'push'
-        id: next-version
+        id: calculate-version
         run: |
-          CURRENT_VERSION="${{ steps.version.outputs.CURRENT_VERSION }}"
+          CURRENT_VERSION="${{ steps.vault.outputs.CURRENT_VERSION }}"
 
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
@@ -79,17 +84,20 @@ jobs:
             "day5/version" \
             version="$VERSION"
 
-      - name: Set version for manual tag deployment
-        if: github.event_name == 'workflow_dispatch'
-        id: manual-version
+      - name: Set final version
+        id: set-version
         run: |
-          TAG="${{ inputs.tag }}"
-          VERSION="${TAG#dev-}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          else
+            TAG="${{ inputs.tag }}"
+            VERSION="${TAG#dev-}"
 
-          echo "Deploying tag: $TAG"
-          echo "Version: $VERSION"
+            echo "Deploying tag: $TAG"
+            echo "Version: $VERSION"
 
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          fi
 
 
   build-ui:
