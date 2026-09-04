@@ -1,0 +1,250 @@
+name: Day5 Versioned Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to deploy (example: dev-1.0.1)"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  UI_APP_NAME: day4-ui-bhargav
+  API_APP_NAME: day4-api-bhargav
+  VAULT_ADDR: https://bhargav-day5-vault-public-vault-78ff819b.a4fe08d1.z1.hashicorp.cloud:8200
+  VAULT_NAMESPACE: admin
+
+jobs:
+
+  prepare:
+    name: Prepare Version
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      # Automatic run from main:
+      # Read current version from Vault and bump the patch number.
+      - name: Get and bump version from Vault
+        if: github.event_name == 'push'
+        id: version
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          namespace: ${{ env.VAULT_NAMESPACE }}
+          method: jwt
+          path: jwt
+          role: github-actions
+          jwtGithubAudience: https://github.com/BhargavJami
+          exportToken: true
+          secrets: |
+            secret/data/day5/version version | CURRENT_VERSION
+
+      - name: Calculate next version
+        if: github.event_name == 'push'
+        id: next-version
+        run: |
+          CURRENT_VERSION="${{ steps.version.outputs.CURRENT_VERSION }}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+          NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+
+          echo "Current version: $CURRENT_VERSION"
+          echo "New version: $NEW_VERSION"
+
+          echo "VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
+
+      - name: Store new version in Vault
+        if: github.event_name == 'push'
+        run: |
+          vault kv put \
+            -namespace="$VAULT_NAMESPACE" \
+            -mount="secret" \
+            "day5/version" \
+            version="$VERSION"
+
+      - name: Set version for manual tag deployment
+        if: github.event_name == 'workflow_dispatch'
+        id: version
+        run: |
+          TAG="${{ inputs.tag }}"
+          VERSION="${TAG#dev-}"
+
+          echo "Deploying tag: $TAG"
+          echo "Version: $VERSION"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+
+  build-ui:
+    name: Build UI
+    needs: prepare
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout deployment code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Validate UI files
+        run: |
+          test -f Day4/ui/index.html
+          test -f Day4/ui/style.css
+          test -f Day4/ui/script.js
+
+      - name: Package UI
+        run: |
+          mkdir -p build
+          cd Day4/ui
+          zip -r ../../build/ui.zip .
+
+      - name: Upload UI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-package
+          path: build/ui.zip
+
+
+  build-api:
+    name: Build API
+    needs: prepare
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout deployment code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install API dependencies
+        working-directory: Day4/api
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check API syntax
+        working-directory: Day4/api
+        run: |
+          python -m py_compile app.py
+
+      - name: Package API
+        run: |
+          mkdir -p build
+          cd Day4/api
+          zip -r ../../build/api.zip app.py requirements.txt
+
+      - name: Upload API artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-package
+          path: build/api.zip
+
+
+  deploy-ui:
+    name: Deploy UI
+    needs:
+      - prepare
+      - build-ui
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download UI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-package
+          path: build
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy UI
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.UI_APP_NAME }}
+          package: build/ui.zip
+
+
+  deploy-api:
+    name: Deploy API
+    needs:
+      - prepare
+      - build-api
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download API artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-package
+          path: build
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy API
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.API_APP_NAME }}
+          package: build/api.zip
+
+
+  create-tag:
+    name: Create Deployment Tag
+    needs:
+      - prepare
+      - deploy-ui
+      - deploy-api
+    if: github.event_name == 'push' && needs.deploy-ui.result == 'success' && needs.deploy-api.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create and push deployment tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          TAG="dev-$VERSION"
+
+          echo "Creating deployment tag: $TAG"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
