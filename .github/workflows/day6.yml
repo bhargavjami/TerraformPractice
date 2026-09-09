@@ -1,0 +1,60 @@
+name: Day 6 - AKS CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Day6/app/**"
+      - "Day6/k8s/**"
+      - ".github/workflows/day6.yml"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name day6acr2026bhargav
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t day6acr2026bhargav.azurecr.io/day6-flask:${{ github.sha }} \
+            -t day6acr2026bhargav.azurecr.io/day6-flask:latest \
+            ./Day6/app
+
+      - name: Push Docker image to ACR
+        run: |
+          docker push day6acr2026bhargav.azurecr.io/day6-flask:${{ github.sha }}
+          docker push day6acr2026bhargav.azurecr.io/day6-flask:latest
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group day6-cloud-devops-rg \
+            --name day6-aks \
+            --admin \
+            --overwrite-existing
+
+      - name: Update Kubernetes deployment
+        run: |
+          kubectl set image deployment/day6-flask \
+            flask=day6acr2026bhargav.azurecr.io/day6-flask:${{ github.sha }}
+
+      - name: Wait for deployment rollout
+        run: |
+          kubectl rollout status deployment/day6-flask --timeout=180s
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods
+          kubectl get service day6-flask-service

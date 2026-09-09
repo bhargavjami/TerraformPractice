@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: day6-flask
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: day6-flask
+  template:
+    metadata:
+      labels:
+        app: day6-flask
+    spec:
+      containers:
+        - name: flask
+          image: day6acr2026bhargav.azurecr.io/day6-flask:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: SQL_SERVER
+              value: "day6-sql-2026-bhargav.database.windows.net"
+            - name: SQL_DATABASE
+              value: "day6-db"
+            - name: SQL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: day6-sql-secret
+                  key: SQL_USERNAME
+            - name: SQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: day6-sql-secret
+                  key: SQL_PASSWORD
